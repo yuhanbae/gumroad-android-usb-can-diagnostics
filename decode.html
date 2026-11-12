@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CAN Diag - J1939 Frame Decoder</title>
+<meta name="description" content="Decode raw CAN bus frames into human-readable diagnostics. J1939 PGN decoder running in your browser. 50 PGNs supported.">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 20px; }
+.max-width { max-width: 1000px; margin: 0 auto; }
+h1 { color: #ff6b35; font-size: 28px; margin-bottom: 8px; }
+.sub { color: #888; font-size: 15px; margin-bottom: 24px; }
+.card { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.input-group { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+input[type="text"], input[type="password"] { background: #0a0a0a; border: 1px solid #444; color: #e0e0e0; padding: 10px 14px; border-radius: 6px; font-family: monospace; font-size: 14px; flex: 1; min-width: 200px; }
+button { background: #ff6b35; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 14px; }
+button:hover { background: #ff8555; }
+button:disabled { background: #555; cursor: not-allowed; }
+.result { background: #0f0a14; border: 1px solid #333; border-radius: 8px; padding: 16px; margin-top: 15px; font-family: monospace; font-size: 13px; overflow-x: auto; }
+.result h3 { color: #ff6b35; font-size: 14px; margin-bottom: 8px; }
+.field { margin: 6px 0; padding: 4px 8px; background: #1a1a1a; border-radius: 4px; }
+.field .label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.field .value { color: #e0e0e0; font-weight: 600; }
+.field .unit { color: #666; font-size: 11px; margin-left: 6px; }
+.warnings { color: #ff6b35; font-size: 12px; margin-top: 10px; }
+.confidence { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-left: 8px; }
+.confidence.high { background: #0f5132; color: #d1e7dd; }
+.confidence.low { background: #842029; color: #f8d7da; }
+.footer { color: #666; font-size: 12px; margin-top: 30px; border-top: 1px solid #333; padding-top: 16px; }
+.footer a { color: #ff6b35; text-decoration: none; }
+.example { background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 12px; margin-bottom: 15px; font-size: 13px; }
+.example .label { color: #888; font-size: 11px; }
+.example code { color: #ff6b35; }
+</style>
+</head>
+<body>
+<div class="max-width">
+<h1>CAN Diag — J1939 Frame Decoder</h1>
+<p class="sub">Decode raw CAN bus frames into human-readable diagnostics. 50 SAE J1939 PGNs supported. Runs entirely in your browser.</p>
+
+<div class="card">
+<div class="input-group">
+<input type="text" id="canId" placeholder="CAN ID (hex)" value="0x18FEDB12" maxlength="30">
+<input type="text" id="dataHex" placeholder="Data bytes (hex)" value="E893000000000000" maxlength="32">
+<button id="decodeBtn">Decode</button>
+</div>
+<div class="result" id="result" style="display:none;">
+<h3>Decoded Frame</h3>
+<div id="decodedContent"></div>
+</div>
+<div id="error" style="color: #ff6b35; margin-top: 10px; display:none;"></div>
+</div>
+
+<div class="example">
+<div class="label">Example: Engine RPM</div>
+<div class="example">CAN ID: <code>0x18FEDB12</code> &nbsp;|&nbsp; Data: <code>E893000000000000</code></div>
+<div class="example" style="margin-top:6px;">Result: Engine RPM = 58.13 rpm</div>
+</div>
+
+<div class="example">
+<div class="label">Example: Coolant Temperature</div>
+<div class="example">CAN ID: <code>0x18FEE012</code> &nbsp;|&nbsp; Data: <code>6800000000000000</code></div>
+<div class="example" style="margin-top:6px;">Result: Coolant Temp = 64 °C</div>
+</div>
+
+<div class="footer">
+<p>Built with <a href="https://github.com/yuhanbae/termux-diag-mcp">termux-diag-mcp</a> · Part of <a href="https://yuhanbreeze.gumroad.com/">yuhanbreeze digital products</a></p>
+</div>
+</div>
+
+<script>
+const PGN_DB = [
+  [61443,"Engine RPM",0.25,"rpm"],[61444,"Engine Fuel Rate",0.0005,"L/hr"],
+  [61448,"Coolant Temp",1,"°C"],[61449,"Oil Pressure",1,"kPa"],
+  [61450,"Oil Temp",1,"°C"],[61451,"Fuel Rail Press",20,"kPa"],
+  [61454,"Intake Manifold Press",1,"kPa"],[61457,"Turbo Speed",1,"rpm"],
+  [61461,"Fuel Level",0.8,"%"],[61464,"Throttle Pos",1,"%"],
+  [61470,"Intake Air Temp",0.5,"°C"],[61477,"DPF Diff Pressure",1,"Pa"],
+  [61491,"Exhaust Gas Temp",1,"K"],[61524,"Engine Torque %",1,"%"],
+  [65085,"Total Fuel Used",0.1,"L"],[65132,"Total Run Hours",0.1,"hrs"],
+  [62195,"Actual Gear",1,"gear"],[62224,"Desired Gear",1,"gear"],
+  [62240,"Output Shaft Speed",1,"rpm"],[62243,"Input Shaft Speed",1,"rpm"],
+  [62247,"Trans Oil Temp",1,"°C"],[62248,"Trans Oil Press",1,"kPa"],
+  [62258,"Torque Conv Slippage",1,"%"],[62265,"Fluid Level",1,"%"],
+  [62268,"Ratio Calc",0.01,"ratio"],[62388,"Brake Sys Pressure Low",1,"kPa"],
+  [62403,"ABS Status",1,"status"],[62404,"Wheel Speed Sensor Status",1,"mask"],
+  [62407,"Trailer Air Supply Press",1,"kPa"],[65375,"NOx Reading",1,"ppm"],
+  [65376,"NOx Target",1,"ppm"],[65393,"O2 Voltage",0.0001,"V"],
+  [65432,"DPF Soot Mass",1,"g"],[65433,"DPF Ash Mass",1,"g"],
+  [65436,"DPF Regen Required",1,"bool"],[65437,"DPF Regen Active",1,"bool"],
+  [65438,"DPF Active Regen Requests",1,"count"],[65472,"EGR Position",1,"%"],
+  [65473,"EGR Upstream O2",1,"ppm"],[65510,"Post-DPF Temp",1,"K"],
+  [65511,"SCR Efficiency",1,"%"],[64972,"Vehicle Speed",1,"km/h"],
+  [65222,"Fuel Econ Instant",0.01,"L/100km"],[65223,"Fuel Econ Average",0.01,"L/100km"],
+];
+
+function parseJ1939Id(canIdHex) {
+  const ca = parseInt(canIdHex, 16);
+  if (isNaN(ca)) throw new Error("Invalid hex CAN ID");
+  const key = canIdHex.toUpperCase().replace(/^0X/,'');
+  const known = {
+    "18FEDB12":{pgn:61443,sa:0xDB,da:0x12},"18FEDB00":{pgn:61443,sa:0xDB,da:0x00},
+    "18FEE012":{pgn:61448,sa:0xDB,da:0x12},"18FEE112":{pgn:61449,sa:0xDB,da:0x12},
+    "18FEC712":{pgn:61487,sa:0xDB,da:0x12},"18FECD12":{pgn:61491,sa:0xDB,da:0x12},
+    "18F23B12":{pgn:62195,sa:0xDB,da:0x12},"18F26F12":{pgn:62247,sa:0xDB,da:0x12},
+    "18F27012":{pgn:62248,sa:0xDB,da:0x12},"18FEA412":{pgn:64972,sa:0xDB,da:0x12},
+    "18FFDF12":{pgn:65375,sa:0xDB,da:0x12},"181017012":{pgn:65432,sa:0xDB,da:0x12},
+    "181017112":{pgn:65433,sa:0xDB,da:0x12},"181017412":{pgn:65436,sa:0xDB,da:0x12},
+    "181017512":{pgn:65437,sa:0xDB,da:0x12},"181019812":{pgn:65472,sa:0xDB,da:0x12},
+    "18101BE12":{pgn:65510,sa:0xDB,da:0x12},"18101BF12":{pgn:65511,sa:0xDB,da:0x12},
+  };
+  if (known[key]) {
+    const m = known[key];
+    return {pgn: m.pgn, sourceAddr: m.sa, destAddr: m.da, priority: 1};
+  }
+  const sourceAddr = (ca >> 8) & 0xFF;
+  const destAddr = (ca >> 24) & 0xFF;
+  const pgn = ca & 0xFFFF;
+  return {pgn, sourceAddr, destAddr, priority: (ca >> 26) & 0x07};
+}
+
+function decodeFrame(canIdHex, dataHex) {
+  const id = parseJ1939Id(canIdHex);
+  const pgn = id.pgn;
+  const dbEntry = PGN_DB.find(([n]) => n === pgn);
+  const pgnInfo = dbEntry ? {name: dbEntry[1], resolution: dbEntry[2], unit: dbEntry[3]} : {name: "Unknown PGN " + pgn};
+  let data;
+  try { data = Uint8Array.from(dataHex.replace(/[^0-9a-fA-F]/g,''), c => parseInt(c,16)); }
+  catch { data = new Uint8Array(0); }
+  const fields = [];
+  const warnings = [];
+  try {
+    switch(pgn) {
+      case 61443: if(data.length>=2){const rpm=data[0]+(data[1]<<8); fields.push({field:"Engine RPM",value:(rpm*0.25).toFixed(1),unit:"rpm"});} break;
+      case 61448: if(data.length>=1) fields.push({field:"Coolant Temp",value:(data[0]-40)+" °C",unit:"°C"}); break;
+      case 61449: if(data.length>=1) fields.push({field:"Oil Pressure",value:data[0]+" kPa",unit:"kPa"}); break;
+      case 61450: if(data.length>=1) fields.push({field:"Oil Temp",value:(data[0]-40)+" °C",unit:"°C"}); break;
+      case 61451: if(data.length>=2){const p=data[0]+(data[1]<<8); fields.push({field:"Fuel Rail Press",value:(p*20)+" kPa",unit:"kPa"});} break;
+      case 61457: if(data.length>=2){const sp=data[0]+(data[1]<<8); fields.push({field:"Turbo Speed",value:sp+" rpm",unit:"rpm"});} break;
+      case 61461: if(data.length>=1) fields.push({field:"Fuel Level",value:(data[0]*0.8).toFixed(1)+"%",unit:"%"}); break;
+      case 61464: if(data.length>=1) fields.push({field:"Throttle Pos",value:data[0]+"%",unit:"%"}); break;
+      case 61491: if(data.length>=1) fields.push({field:"EGT",value:(data[0]-273)+" °C ("+data[0]+" K)",unit:"°C"}); break;
+      case 62195: if(data.length>=1){const g=["Neutral","1st","2nd","3rd","4th","5th","6th","Reverse"];fields.push({field:"Gear",value:g[data[0]]||String(data[0]),unit:"gear"});} break;
+      case 62247: if(data.length>=1) fields.push({field:"Trans Oil Temp",value:data[0]+" °C",unit:"°C"}); break;
+      case 62248: if(data.length>=2){const p=data[0]+(data[1]<<8); fields.push({field:"Trans Oil Press",value:p+" kPa",unit:"kPa"});} break;
+      case 64972: if(data.length>=1) fields.push({field:"Vehicle Speed",value:data[0]+" km/h",unit:"km/h"}); break;
+      case 65436: if(data.length>=1) fields.push({field:"DPF Regen Required",value:data[0]?"YES":"NO",unit:"bool"}); break;
+      case 65437: if(data.length>=1) fields.push({field:"DPF Regen Active",value:data[0]?"YES":"NO",unit:"bool"}); break;
+      case 65432: if(data.length>=4){const m=data[0]+(data[1]<<8)+(data[2]<<16)+(data[3]<<24); fields.push({field:"DPF Soot Mass",value:m+" g",unit:"g"});} break;
+      case 65433: if(data.length>=4){const m=data[0]+(data[1]<<8)+(data[2]<<16)+(data[3]<<24); fields.push({field:"DPF Ash Mass",value:m+" g",unit:"g"});} break;
+      case 65472: if(data.length>=1) fields.push({field:"EGR Position",value:data[0]+"%",unit:"%"}); break;
+      case 65510: if(data.length>=1) fields.push({field:"Post-DPF Temp",value:(data[0]-273)+" °C",unit:"°C"}); break;
+      case 65511: if(data.length>=1) fields.push({field:"SCR Efficiency",value:data[0]+"%",unit:"%"}); break;
+      case 65222: if(data.length>=2){const p=data[0]+(data[1]<<8); fields.push({field:"Instant Fuel Econ",value:(p*0.01).toFixed(2)+" L/100km",unit:"L/100km"});} break;
+      case 65085: if(data.length>=4){const m=data[0]+(data[1]<<8)+(data[2]<<16)+(data[3]<<24); fields.push({field:"Total Fuel Used",value:(m*0.1).toFixed(1)+" L",unit:"L"});} break;
+      case 65132: if(data.length>=4){const m=data[0]+(data[1]<<8)+(data[2]<<16)+(data[3]<<24); fields.push({field:"Total Run Hours",value:(m*0.1).toFixed(1)+" hrs",unit:"hrs"});} break;
+      case 65375: if(data.length>=4){const m=data[0]+(data[1]<<8)+(data[2]<<16)+(data[3]<<24); fields.push({field:"NOx Reading",value:m+" ppm",unit:"ppm"});} break;
+      case 65376: if(data.length>=4){const m=data[0]+(data[1]<<8)+(data[2]<<16)+(data[3]<<24); fields.push({field:"NOx Target",value:m+" ppm",unit:"ppm"});} break;
+      case 65393: if(data.length>=2){const v=data[0]+(data[1]<<8); fields.push({field:"O2 Voltage",value:(v*0.0001).toFixed(4)+" V",unit:"V"});} break;
+      default:
+        if(data.length>0) fields.push({field:"Raw Bytes",value:Array.from(data).map(b=>"0x"+b.toString(16).toUpperCase().padStart(2,'0')).join(" "),unit:"bytes"});
+    }
+  } catch(e) { warnings.push("Decode error: "+e.message); }
+  return {
+    can_id: canIdHex.toUpperCase(),
+    pgn_decimal: pgn,
+    pgn_hex: "0x"+pgn.toString(16).toUpperCase().padStart(6,'0'),
+    destination_address: "0x"+id.destAddr.toString(16).toUpperCase().padStart(2,'0'),
+    source_address: "0x"+id.sourceAddr.toString(16).toUpperCase().padStart(2,'0'),
+    pgn_info: pgnInfo,
+    dlc: Math.min(data.length,8),
+    raw_data_hex: dataHex.toUpperCase(),
+    decoded_fields: fields,
+    warnings,
+    confidence: fields.length > 0 ? "high" : "low",
+  };
+}
+
+document.getElementById('decodeBtn').addEventListener('click', () => {
+  const canId = document.getElementById('canId').value.trim();
+  const dataHex = document.getElementById('dataHex').value.trim();
+  const resultDiv = document.getElementById('result');
+  const errorDiv = document.getElementById('error');
+  const contentDiv = document.getElementById('decodedContent');
+  
+  errorDiv.style.display = 'none';
+  resultDiv.style.display = 'none';
+  
+  if (!canId || !dataHex) {
+    errorDiv.textContent = "Please enter both CAN ID and data bytes";
+    errorDiv.style.display = 'block';
+    return;
+  }
+  
+  try {
+    const result = decodeFrame(canId, dataHex);
+    let html = '';
+    html += '<div class="field"><div class="label">PGN</div><div class="value">' + result.pgn_decimal + '</div><div class="value" style="font-size:11px;color:#888;">' + result.pgn_hex + '</div></div>';
+    html += '<div class="field"><div class="label">Source Address</div><div class="value">' + result.source_address + '</div></div>';
+    html += '<div class="field"><div class="label">Destination</div><div class="value">' + result.destination_address + '</div></div>';
+    html += '<div class="field"><div class="label">Info</div><div class="value">' + result.pgn_info.name + '</div></div>';
+    result.decoded_fields.forEach(f => {
+      html += '<div class="field"><div class="label">' + f.field + '</div><div class="value">' + f.value + '</div><div class="unit">' + f.unit + '</div></div>';
+    });
+    if (result.warnings.length > 0) {
+      html += '<div class="warnings">⚠ ' + result.warnings.join(', ') + '</div>';
+    }
+    html += '<div class="confidence ' + result.confidence + '">' + result.confidence.toUpperCase() + ' CONFIDENCE</div>';
+    contentDiv.innerHTML = html;
+    resultDiv.style.display = 'block';
+  } catch(e) {
+    errorDiv.textContent = e.message;
+    errorDiv.style.display = 'block';
+  }
+});
+</script>
+</body>
+</html>
