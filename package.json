@@ -1,0 +1,12 @@
+{
+  "name": "@yuhanbae/can-diag-api",
+  "version": "1.0.0",
+  "description": "REST API that interprets raw CAN bus frames into human-readable diagnostics. J1939 PGN decoder, OBD-II parser, DTC lookup.",
+  "type": "module",
+  "main": "dist/server.js",
+  "bin": { "can-diag-api": "dist/server.js" },
+  "scripts": { "start": "node dist/server.js" },
+  "keywords": ["can-bus", "j1939", "obd2", "diagnostics", "automotive", "api"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/yuhanbae/can-diag-api" }
+}
